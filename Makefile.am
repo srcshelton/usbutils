@@ -23,12 +23,11 @@ lsusb_SOURCES = \
 	usbmisc.c usbmisc.h
 
 lsusb_CPPFLAGS = \
-	$(AM_CPPFLAGS) $(LIBUSB_CFLAGS) $(UDEV_CFLAGS) \
+	$(AM_CPPFLAGS) $(LIBUSB_CFLAGS) \
 	-DDATADIR=\"$(datadir)\"
 
 lsusb_LDADD = \
-	$(LIBUSB_LIBS) \
-	$(UDEV_LIBS)
+	$(LIBUSB_LIBS)
 
 if HAVE_ZLIB
 lsusb_CPPFLAGS += -DHAVE_LIBZ
