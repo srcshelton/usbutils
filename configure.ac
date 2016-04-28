@@ -20,6 +20,8 @@ AS_IF([test "x$enable_zlib" != "xno"],
 	[AC_CHECK_LIB(z, inflateEnd, HAVE_ZLIB=yes)])
 AM_CONDITIONAL(HAVE_ZLIB, [test "$HAVE_ZLIB" = "yes"])
 
+PKG_CHECK_MODULES(LIBUSB, libusb-1.0 >= 1.0.9)
+
 AC_ARG_ENABLE(usbids,
 	AS_HELP_STRING(--disable-usbids, [disable installing usb.ids @<:@default=install@:>@]))
 AM_CONDITIONAL([INSTALL_USBIDS], [test "x$enable_usbids" != "xno"])
