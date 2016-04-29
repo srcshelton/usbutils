@@ -69,6 +69,9 @@
 #define USB_DC_20_EXTENSION		0x02
 #define USB_DC_SUPERSPEED		0x03
 #define USB_DC_CONTAINER_ID		0x04
+#define USB_DC_PLATFORM 		0x05
+#define USB_DC_SUPERSPEEDPLUS		0x0a
+#define USB_DC_BILLBOARD		0x0d
 
 /* Conventional codes for class-specific descriptors.  The convention is
  * defined in the USB "Common Class" Spec (3.11).  Individual class specs
@@ -646,7 +649,7 @@ static void dump_pipe_desc(const unsigned char *buf)
 		[0xE0 ... 0xEF] = "Vendor specific",
 		[0xF0 ... 0xFF] = "Reserved",
 	};
-	
+
 	if (buf[0] == 4 && buf[1] == 0x24) {
 		printf("        %s (0x%02x)\n", pipe_name[buf[2]], buf[2]);
 	} else {
@@ -3734,6 +3737,105 @@ static void dump_container_id_device_capability_desc(unsigned char *buf)
 			get_guid(&buf[4]));
 }
 
+static void dump_platform_device_capability_desc(unsigned char *buf)
+{
+	unsigned char desc_len = buf[0];
+	unsigned char cap_data_len = desc_len - 20;
+	if (desc_len < 20) {
+		fprintf(stderr, "  Bad Platform Device Capability descriptor.\n");
+		return;
+	}
+	printf("  Platform Device Capability:\n"
+			"    bLength             %5u\n"
+			"    bDescriptorType     %5u\n"
+			"    bDevCapabilityType  %5u\n"
+			"    bReserved           %5u\n",
+			buf[0], buf[1], buf[2], buf[3]);
+	printf("    PlatformCapabilityUUID    %s\n",
+			get_guid(&buf[4]));
+	for (unsigned char i = 0; i < cap_data_len; i++) {
+		printf("    CapabilityData[%u]    0x%02x\n", i, buf[20 + i]);
+	}
+}
+
+static void dump_billboard_device_capability_desc(libusb_device_handle *dev, unsigned char *buf)
+{
+	char *url, *alt_mode_str;
+	int w_vconn_power, alt_mode, i, svid, state;
+	const char *vconn;
+	unsigned char *bmConfigured;
+
+	if (buf[0] < 48) {
+		fprintf(stderr, "  Bad Billboard Capability descriptor.\n");
+		return;
+	}
+
+	if (buf[4] > BILLBOARD_MAX_NUM_ALT_MODE) {
+		fprintf(stderr, "  Invalid value for bNumberOfAlternateModes.\n");
+		return;
+	}
+
+	if (buf[0] < (44 + buf[4] * 4)) {
+		fprintf(stderr, "  bLength does not match with bNumberOfAlternateModes.\n");
+		return;
+	}
+
+	url = get_dev_string(dev, buf[3]);
+	w_vconn_power = convert_le_u16(buf+6);
+	if (w_vconn_power & (1 << 15)) {
+		vconn = "VCONN power not required";
+	} else if (w_vconn_power < 7) {
+		vconn = vconn_power[w_vconn_power & 0x7];
+	} else {
+		vconn = "reserved";
+	}
+	printf("  Billboard Capability:\n"
+			"    bLength                 %5u\n"
+			"    bDescriptorType         %5u\n"
+			"    bDevCapabilityType      %5u\n"
+			"    iAddtionalInfoURL       %5u %s\n"
+			"    bNumberOfAlternateModes %5u\n"
+			"    bPreferredAlternateMode %5u\n"
+			"    VCONN Power             %5u %s\n",
+			buf[0], buf[1], buf[2],
+			buf[3], url,
+			buf[4], buf[5],
+			w_vconn_power, vconn);
+
+	bmConfigured = &buf[8];
+
+	printf("    bmConfigured               ");
+	dump_bytes(bmConfigured, 32);
+
+	printf(
+			"    bcdVersion              %2x.%02x\n"
+			"    bAdditionalFailureInfo  %5u\n"
+			"    bReserved               %5u\n",
+			(buf[41] == 0) ? 1 : buf[41], buf[40],
+			buf[42], buf[43]);
+
+	printf("    Alternate Modes supported by Device Container:\n");
+	i = 44; /* Alternate mode 0 starts at index 44 */
+	for (alt_mode = 0; alt_mode < buf[4]; alt_mode++) {
+		svid = convert_le_u16(buf+i);
+		alt_mode_str = get_dev_string(dev, buf[i+3]);
+		state = ((bmConfigured[alt_mode >> 2]) >> ((alt_mode & 0x3) << 1)) & 0x3;
+		printf(
+			"    Alternate Mode %d : %s\n"
+			"      wSVID[%d]                    0x%04X\n"
+			"      bAlternateMode[%d]       %5u\n"
+			"      iAlternateModeString[%d] %5u %s\n",
+			alt_mode, alt_mode_state[state],
+			alt_mode, svid,
+			alt_mode, buf[i+2],
+			alt_mode, buf[i+3], alt_mode_str);
+		free(alt_mode_str);
+		i += 4;
+	}
+
+	free (url);
+}
+
 static void dump_bos_descriptor(libusb_device_handle *fd)
 {
 	/* Total for all known BOS descriptors is 43 bytes:
@@ -3807,6 +3909,12 @@ static void dump_bos_descriptor(libusb_device_handle *fd)
 			break;
 		case USB_DC_CONTAINER_ID:
 			dump_container_id_device_capability_desc(buf);
+			break;
+		case USB_DC_PLATFORM:
+			dump_platform_device_capability_desc(buf);
+			break;
+		case USB_DC_BILLBOARD:
+			dump_billboard_device_capability_desc(fd, buf);
 			break;
 		default:
 			printf("  ** UNRECOGNIZED: ");
